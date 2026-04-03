@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>입고현황 대시보드 | OpenLink</title>
+<script type="text/javascript"
+  src="//dapi.kakao.com/v2/maps/sdk.js?appkey=9ca121f1d5a3a734a8cfdf6792717c07">
+</script>
+<script>
+window._kakaoMapReady = true; // 동기 로드이므로 즉시 true
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --ban:#C8281E;  --ban-bg:#FFF1F0; --ban-bd:#FFCCC7;
+  --warn:#8A6300; --warn-bg:#FFFBE6;--warn-bd:#FFE58F;
+  --ok:#237804;   --ok-bg:#F6FFED;  --ok-bd:#B7EB8F;
+  --dark:#1A1A2E; --mid:#64748B;    --lt:#94A3B8;
+  --bg:#F1F5F9;   --white:#fff;     --bd:#E2E8F0;
+  --hh:56px; --bh:0px;
+  --font:'Apple SD Gothic Neo','Noto Sans KR','맑은 고딕',sans-serif;
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:13px;color:var(--dark);background:var(--bg)}
+
+/* ── 헤더 ── */
+#hd{
+  position:fixed;top:0;left:0;right:0;height:var(--hh);z-index:300;
+  background:linear-gradient(135deg,#0D1B2A 0%,#1A3550 100%);
+  border-bottom:2px solid #00AAEE;
+  display:flex;align-items:center;padding:0 18px;gap:14px;
+}
+#hd img{height:26px;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0}
+#hd-sep{width:1px;height:22px;background:rgba(255,255,255,.2);flex-shrink:0}
+#hd-ttl{font-size:16px;font-weight:600;color:rgba(255,255,255,.9);letter-spacing:.3px}
+#hd-r{margin-left:auto;display:flex;align-items:center;gap:14px;flex-shrink:0}
+#hd-dt{font-size:10px;color:rgba(255,255,255,.45);text-align:right;margin-bottom:1px}
+#hd-ck{font-size:21px;font-weight:200;color:#fff;letter-spacing:2px;font-variant-numeric:tabular-nums}
+
+/* 달력 버튼 (헤더 우측) */
+#hd-cal{
+  display:flex;align-items:center;gap:5px;padding:6px 13px;
+  border:1px solid rgba(255,255,255,.28);border-radius:6px;
+  color:rgba(255,255,255,.85);font-size:12px;font-weight:500;
+  cursor:pointer;background:rgba(255,255,255,.08);font-family:var(--font);
+  transition:.15s;white-space:nowrap;
+}
+#hd-cal:hover{background:rgba(255,255,255,.16)}
+#hd-cal .cur-date{
+  font-size:13px;font-weight:700;color:#fff;
+  background:rgba(255,255,255,.15);padding:2px 8px;border-radius:4px;margin-left:4px;
+}
+
+#hd-btn{
+  display:flex;align-items:center;gap:4px;padding:6px 12px;
+  border:1px solid rgba(255,255,255,.25);border-radius:6px;
+  color:rgba(255,255,255,.75);font-size:11px;
+  cursor:pointer;background:rgba(255,255,255,.05);font-family:var(--font);
+}
+#hd-btn:hover{background:rgba(255,255,255,.14)}
+.spin{animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── 달력 팝업 ── */
+#cal-pop{
+  position:fixed;top:var(--hh);right:16px;
+  background:var(--white);border:1px solid var(--bd);border-radius:10px;
+  padding:16px;z-index:400;box-shadow:0 8px 28px rgba(0,0,0,.16);
+  display:none;width:256px;
+}
+#cal-pop.open{display:block}
+#cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.cnb{background:none;border:none;cursor:pointer;font-size:14px;color:var(--mid);padding:2px 8px;border-radius:4px}
+.cnb:hover{background:var(--bg)}
+#cal-ml{font-size:14px;font-weight:700;color:var(--dark)}
+#cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.cdow{font-size:10px;color:var(--lt);padding:3px 0;font-weight:600}
+.cday{font-size:12px;padding:5px 2px;border-radius:5px;cursor:pointer;color:var(--mid)}
+.cday:hover{background:var(--bg)}
+.cday.has-data{color:var(--dark);font-weight:600}
+.cday.has-ban{background:var(--ban-bg);color:var(--ban);font-weight:700;border:1px solid var(--ban-bd)}
+.cday.has-warn{background:var(--warn-bg);color:var(--warn);font-weight:600}
+.cday.sel{background:var(--dark)!important;color:#fff!important;border:none!important}
+.cday.today{box-shadow:0 0 0 1.5px var(--dark)}
+.cday.empty{cursor:default}
+
+/* ── 메인 레이아웃 ── */
+#main{
+  position:fixed;top:var(--hh);left:0;right:0;bottom:0;
+  display:flex;
+}
+
+/* 좌측 50%: 지도 */
+#map-col{width:50%;height:100%;position:relative;flex-shrink:0}
+#map{width:100%;height:100%;background:#e8eef4;display:block}
+
+/* 지도 위 요약 */
+#ms{position:absolute;top:10px;left:10px;display:flex;gap:6px;z-index:10}
+.msc{
+  background:var(--white);border-radius:8px;border:1px solid var(--bd);
+  padding:8px 12px;text-align:center;min-width:70px;
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
+.msv{font-size:21px;font-weight:700;line-height:1;margin-bottom:2px}
+.msl{font-size:9px;color:var(--mid);font-weight:500}
+.msv.ban{color:var(--ban)}
+.msv.warn{color:#D48806}
+.msv.ok{color:var(--ok)}
+
+/* 범례 */
+#leg{
+  position:absolute;bottom:28px;left:10px;
+  background:rgba(255,255,255,.95);border:1px solid var(--bd);border-radius:8px;
+  padding:10px 12px;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
+.lt-title{font-size:9px;font-weight:700;color:var(--mid);margin-bottom:6px;letter-spacing:.5px}
+.lr{display:flex;align-items:center;gap:7px;margin-bottom:4px;font-size:11px;color:var(--dark)}
+.lr:last-child{margin-bottom:0}
+.ld{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.ld.ban{background:var(--ban)}
+.ld.warn{background:#FAAD14}
+.ld.ok{background:#52C41A}
+.ld.none{background:#CBD5E1}
+
+/* 마커 팝업 */
+#pop{
+  position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  background:var(--white);border-radius:11px;
+  padding:13px 15px 12px;min-width:240px;max-width:310px;
+  box-shadow:0 4px 20px rgba(0,0,0,.18);z-index:10;display:none;
+  border-top:3px solid var(--bd);
+}
+#pop.show{display:block}
+#pop.ban-p{border-top-color:var(--ban)}
+#pop.warn-p{border-top-color:#FAAD14}
+#pop.ok-p{border-top-color:var(--ok)}
+#pop-x{position:absolute;top:9px;right:11px;font-size:14px;cursor:pointer;color:var(--lt);background:none;border:none}
+.ph{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.pn{font-size:14px;font-weight:700}
+.pb{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.pb.ban{background:var(--ban-bg);color:var(--ban);border:1px solid var(--ban-bd)}
+.pb.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-bd)}
+.pb.ok{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-bd)}
+.pa{font-size:11px;color:var(--mid);margin-bottom:9px;line-height:1.4}
+.plbl{font-size:10px;color:var(--lt);font-weight:600;margin-bottom:4px}
+.pps{display:flex;gap:5px;margin-bottom:8px}
+.pp{flex:1;text-align:center;padding:7px 3px;border-radius:6px}
+.pp .pv{font-size:17px;font-weight:700;display:block;margin-bottom:2px}
+.pp .pl{font-size:9px;font-weight:500}
+.pp.w{background:#EFF6FF;color:#1D4ED8}
+.pp.h{background:#F0FDF4;color:#166534}
+.pp.t{background:#F5F3FF;color:#6D28D9}
+.prb{
+  width:100%;padding:7px;background:var(--ban-bg);
+  border:1px solid var(--ban-bd);border-radius:6px;
+  font-size:11px;font-weight:700;color:var(--ban);cursor:pointer;font-family:var(--font);
+}
+.prb:hover{background:#FFE0DE}
+
+/* ── 우측 50%: 제한 + 금지 나란히 ── */
+#list-col{
+  width:50%;height:100%;display:flex;border-left:1px solid var(--bd);overflow:hidden;
+}
+
+/* 제한(노란) */
+#warn-col{
+  flex:1;display:flex;flex-direction:column;
+  border-right:1px solid var(--bd);background:var(--white);min-width:0;
+}
+/* 금지(빨간) */
+#ban-col{
+  flex:1;display:flex;flex-direction:column;
+  background:var(--white);min-width:0;
+}
+
+/* 컬럼 헤더 */
+.col-hd{
+  padding:11px 13px 9px;border-bottom:1px solid var(--bd);flex-shrink:0;
+}
+.col-hd-top{display:flex;align-items:center;gap:8px}
+.col-badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;display:flex;align-items:center;gap:3px}
+.col-badge.ban{background:var(--ban);color:#fff}
+.col-badge.warn{background:#FAAD14;color:#fff}
+.col-cnt{font-size:24px;font-weight:700;line-height:1}
+.col-cnt.ban{color:var(--ban)}
+.col-cnt.warn{color:#D48806}
+.col-date{font-size:10px;color:var(--lt);margin-left:auto}
+
+/* 사유필요 알림 */
+.nr-alert{
+  padding:6px 13px;background:#FFF1F0;border-bottom:1px solid var(--ban-bd);
+  font-size:10px;color:var(--ban);font-weight:600;cursor:pointer;
+  display:none;flex-shrink:0;
+}
+.nr-alert.show{display:block}
+.nr-alert:hover{background:#FFE0DE}
+
+/* 검색 */
+.col-srch{padding:7px 10px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.col-inp{
+  width:100%;padding:6px 9px;border:1px solid var(--bd);
+  border-radius:5px;font-size:11px;outline:none;font-family:var(--font);
+}
+.col-inp.ban:focus{border-color:var(--ban)}
+.col-inp.warn:focus{border-color:#FAAD14}
+
+/* 카드 리스트 */
+.col-list{flex:1;overflow-y:auto;padding:8px 8px 60px}
+.col-list::-webkit-scrollbar{width:3px}
+.col-list::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:2px}
+
+/* 입고금지 카드 */
+.bc{
+  border-radius:8px;border:1px solid var(--ban-bd);background:var(--ban-bg);
+  cursor:pointer;transition:all .12s;margin-bottom:7px;
+}
+.bc:hover{box-shadow:0 3px 10px rgba(200,40,30,.22);transform:translateY(-1px)}
+.bc.on{box-shadow:0 0 0 2px var(--ban);transform:translateY(-1px)}
+.bc.nr{border-color:var(--ban);border-width:2px}
+.bc-top{padding:9px 11px 6px;border-bottom:1px solid var(--ban-bd)}
+.bc-row1{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.bc-seq{font-size:9px;font-weight:700;color:var(--ban);background:#fff;border:1px solid var(--ban-bd);padding:1px 5px;border-radius:3px;flex-shrink:0}
+.bc-nm{font-size:12px;font-weight:700;color:var(--ban);flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bc-nr-badge{flex-shrink:0;background:var(--ban);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px}
+.bc-ad{font-size:10px;color:#9B2335;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bc-bt{padding:7px 11px;display:flex;align-items:center;gap:5px}
+.bcp{font-size:10px;padding:2px 7px;border-radius:8px;font-weight:600}
+.bcp.w{background:#DBEAFE;color:#1E40AF}
+.bcp.h{background:#DCFCE7;color:#166534}
+.bcp.t{background:#EDE9FE;color:#5B21B6}
+.bc-rl{margin-left:auto;font-size:9px;color:var(--ban);font-weight:700;text-decoration:underline;cursor:pointer;white-space:nowrap;flex-shrink:0}
+
+/* 입고제한 카드 */
+.wc{
+  border-radius:8px;border:1px solid var(--warn-bd);background:var(--warn-bg);
+  cursor:pointer;transition:all .12s;margin-bottom:7px;
+}
+.wc:hover{box-shadow:0 3px 8px rgba(200,140,0,.2);transform:translateY(-1px)}
+.wc.on{box-shadow:0 0 0 2px #FAAD14;transform:translateY(-1px)}
+.wc-top{padding:9px 11px 6px;border-bottom:1px solid var(--warn-bd)}
+.wc-row1{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.wc-seq{font-size:9px;font-weight:700;color:var(--warn);background:#fff;border:1px solid var(--warn-bd);padding:1px 5px;border-radius:3px;flex-shrink:0}
+.wc-nm{font-size:12px;font-weight:700;color:var(--warn);flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wc-ad{font-size:10px;color:#875500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wc-bt{padding:7px 11px;display:flex;gap:5px}
+.wcp{font-size:10px;padding:2px 7px;border-radius:8px;font-weight:500}
+.wcp.w{background:#DBEAFE;color:#1E40AF}
+.wcp.h{background:#DCFCE7;color:#166534}
+.wcp.t{background:#EDE9FE;color:#5B21B6}
+
+/* 빈 상태 */
+.empty{padding:32px 12px;text-align:center}
+.empty-ic{font-size:32px;margin-bottom:8px}
+.empty-ms{font-size:12px;color:var(--mid);font-weight:500}
+.empty-sb{font-size:10px;color:var(--lt);margin-top:3px}
+
+/* 사유 접수 바 */
+#reason-bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:200;
+  background:var(--white);border-top:1px solid var(--bd);
+  box-shadow:0 -2px 8px rgba(0,0,0,.07);
+}
+#reason-toggle{
+  padding:8px 16px;display:flex;align-items:center;justify-content:space-between;
+  cursor:pointer;font-size:11px;font-weight:600;color:var(--mid);
+}
+#reason-toggle:hover{background:var(--bg)}
+#rbadge{background:var(--ban);color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:8px}
+#rl{display:none;max-height:180px;overflow-y:auto;border-top:1px solid var(--bd)}
+#rl.open{display:block}
+.ri{padding:9px 16px;border-bottom:1px solid #F1F5F9;font-size:11px}
+.ri-tp{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.ri-fn{font-weight:700;color:var(--dark)}
+.ri-dt{background:var(--ban-bg);color:var(--ban);padding:1px 5px;border-radius:3px;font-size:10px}
+.ri-rs{color:var(--mid);line-height:1.5;margin-bottom:2px}
+.ri-mt{color:var(--lt);font-size:10px}
+
+/* 모달 */
+#mo-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;align-items:center;justify-content:center}
+#mo-ov.show{display:flex}
+#mo{background:var(--white);border-radius:13px;padding:22px 24px;width:460px;max-width:92vw;box-shadow:0 12px 44px rgba(0,0,0,.22)}
+.mo-ic{font-size:26px;margin-bottom:7px}
+.mo-tl{font-size:15px;font-weight:700;margin-bottom:3px}
+.mo-sb{font-size:11px;color:var(--mid);margin-bottom:14px}
+.mo-info{background:var(--ban-bg);border:1px solid var(--ban-bd);border-radius:7px;padding:9px 12px;font-size:11px;color:var(--ban);margin-bottom:13px;line-height:1.7;font-weight:500}
+.mo-fd{margin-bottom:12px}
+.mo-lb{font-size:11px;font-weight:700;color:var(--mid);margin-bottom:4px;display:block}
+.mo-in,.mo-ta{width:100%;padding:8px 11px;border:1px solid var(--bd);border-radius:7px;font-size:12px;outline:none;font-family:var(--font)}
+.mo-ta{resize:vertical;min-height:85px;line-height:1.7}
+.mo-in:focus,.mo-ta:focus{border-color:var(--ban);box-shadow:0 0 0 3px rgba(200,40,30,.1)}
+.mo-bts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.mo-btn{padding:9px 20px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;font-family:var(--font)}
+.mo-cc{background:var(--bg);color:var(--dark)}
+.mo-sm{background:var(--ban);color:#fff}
+.mo-cc:hover{background:#E2E8F0}
+.mo-sm:hover{opacity:.88}
+
+/* 로딩 */
+#ld{position:fixed;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:13px}
+#ld.hidden{display:none}
+.ld-sp{width:38px;height:38px;border:3px solid #E2E8F0;border-top-color:var(--dark);border-radius:50%;animation:spin .8s linear infinite}
+#ld-ms{font-size:13px;color:var(--mid);font-weight:500}
+#ld-pg{font-size:11px;color:var(--lt)}
+</style>
+</head>
+<body>
+
+<div id="ld">
+  <div class="ld-sp"></div>
+  <div id="ld-ms">데이터 불러오는 중...</div>
+  <div id="ld-pg"></div>
+</div>
+
+<!-- 헤더 -->
+<div id="hd">
+  <img src="https://taksong-driver.openmile.kr/openlink.png" onerror="this.style.display='none'" alt="OpenLink">
+  <div id="hd-sep"></div>
+  <div id="hd-ttl">입고현황 모니터링 대시보드</div>
+  <div id="hd-r">
+    <div>
+      <div id="hd-dt"></div>
+      <div id="hd-ck"></div>
+    </div>
+    <!-- 날짜 선택 버튼 (달력 토글) -->
+    <button id="hd-cal" onclick="toggleCal()">
+      📅 조회일 <span class="cur-date" id="hd-cur-date">-</span>
+    </button>
+    <button id="hd-btn" onclick="loadData()">
+      <span id="ref-ic">↺</span>
+    </button>
+  </div>
+</div>
+
+<!-- 달력 팝업 -->
+<div id="cal-pop">
+  <div id="cal-nav">
+    <button class="cnb" onclick="calMove(-1)">◀</button>
+    <div id="cal-ml"></div>
+    <button class="cnb" onclick="calMove(1)">▶</button>
+  </div>
+  <div id="cal-grid"></div>
+</div>
+
+<!-- 메인 -->
+<div id="main">
+
+  <!-- 좌측 50%: 지도 -->
+  <div id="map-col">
+    <div id="map"></div>
+    <div id="ms">
+      <div class="msc"><div class="msv ban" id="ms-b">-</div><div class="msl">🔴 금지</div></div>
+      <div class="msc"><div class="msv warn" id="ms-w">-</div><div class="msl">🟡 제한</div></div>
+      <div class="msc"><div class="msv ok" id="ms-o">-</div><div class="msl">🟢 원활</div></div>
+      <div class="msc" style="min-width:82px"><div class="msv" id="ms-t" style="color:#374151;font-size:18px">-</div><div class="msl">당일접수</div></div>
+    </div>
+    <div id="leg">
+      <div class="lt-title">마커 범례</div>
+      <div class="lr"><div class="ld ban"></div>입고금지 (!)</div>
+      <div class="lr"><div class="ld warn"></div>입고제한</div>
+      <div class="lr"><div class="ld ok"></div>원활</div>
+      <div class="lr"><div class="ld none"></div>실적없음</div>
+    </div>
+    <div id="pop">
+      <button id="pop-x" onclick="closePop()">✕</button>
+      <div class="ph"><div class="pn" id="pop-nm"></div><div class="pb" id="pop-bd"></div></div>
+      <div class="pa" id="pop-ad"></div>
+      <div class="plbl">당일 접수 (전일대비 증가)</div>
+      <div class="pps">
+        <div class="pp w"><span class="pv" id="pop-w">-</span><span class="pl">우리금융</span></div>
+        <div class="pp h"><span class="pv" id="pop-h">-</span><span class="pl">현대캐피탈</span></div>
+        <div class="pp t"><span class="pv" id="pop-t">-</span><span class="pl">합계</span></div>
+      </div>
+      <div class="plbl">누적 입고</div>
+      <div class="pps" style="margin-bottom:9px">
+        <div class="pp w" style="background:#F8FAFC"><span class="pv" id="pop-cw" style="font-size:14px">-</span><span class="pl">우리금융</span></div>
+        <div class="pp h" style="background:#F8FAFC"><span class="pv" id="pop-ch" style="font-size:14px">-</span><span class="pl">현대캐피탈</span></div>
+        <div class="pp t" style="background:#F8FAFC"><span class="pv" id="pop-ct" style="font-size:14px">-</span><span class="pl">누적합계</span></div>
+      </div>
+      <button class="prb" id="pop-rb" onclick="openModal()" style="display:none">⚠️ 입고제한 공장 사유 제출</button>
+    </div>
+  </div>
+
+  <!-- 우측 50% -->
+  <div id="list-col">
+    <!-- 제한(노란) 컬럼 -->
+    <div id="warn-col">
+      <div class="col-hd">
+        <div class="col-hd-top">
+          <div class="col-badge warn">🟡 입고제한</div>
+          <div class="col-cnt warn" id="warn-cnt">0</div>
+          <div class="col-date" id="warn-date"></div>
+        </div>
+      </div>
+      <div class="col-srch">
+        <input class="col-inp warn" id="warn-inp" type="text" placeholder="검색..." oninput="renderLists()">
+      </div>
+      <div class="col-list" id="warn-list"></div>
+    </div>
+
+    <!-- 금지(빨간) 컬럼 -->
+    <div id="ban-col">
+      <div class="col-hd">
+        <div class="col-hd-top">
+          <div class="col-badge ban">🔴 입고금지</div>
+          <div class="col-cnt ban" id="ban-cnt">0</div>
+          <div class="col-date" id="ban-date"></div>
+        </div>
+        <div id="nr-alert" class="nr-alert" onclick="scrollToNR()"></div>
+      </div>
+      <div class="col-srch">
+        <input class="col-inp ban" id="ban-inp" type="text" placeholder="검색..." oninput="renderLists()">
+      </div>
+      <div class="col-list" id="ban-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 사유 접수 바 -->
+<div id="reason-bar">
+  <div id="reason-toggle" onclick="toggleRL()">
+    <span>📋 사유 접수 내역</span>
+    <span id="rbadge">0</span>
+  </div>
+  <div id="rl"></div>
+</div>
+
+<!-- 사유 모달 -->
+<div id="mo-ov">
+  <div id="mo">
+    <div class="mo-ic">⚠️</div>
+    <div class="mo-tl">입고금지 공장 입고 사유 제출</div>
+    <div class="mo-sb">입고금지 공장에 접수가 발생한 사유를 기록합니다</div>
+    <div class="mo-info" id="mo-info"></div>
+    <div class="mo-fd">
+      <label class="mo-lb">제출자</label>
+      <input class="mo-in" id="mo-sub" placeholder="홍길동 (사고팀)">
+    </div>
+    <div class="mo-fd">
+      <label class="mo-lb">입고 사유 <span style="color:var(--ban)">*</span></label>
+      <textarea class="mo-ta" id="mo-rs" placeholder="입고 사유를 구체적으로 입력해 주세요&#10;예: 고객 긴급 요청 / 타 공장 만차 / 사고차량 긴급 처리 등"></textarea>
+    </div>
+    <div class="mo-bts">
+      <button class="mo-btn mo-cc" onclick="closeMo()">취소</button>
+      <button class="mo-btn mo-sm" id="mo-submit-btn" onclick="submitReason()">제출</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbzTq2_bhxoOJriaj5bz75bbxVHDJ685qlAcWZDd4IfFmLlKfWWhXiaTTtP-8gnVkXvE0w/exec';
+var allData={}, facs=[], curDate='', allDates=[];
+var markers={}, geoCache={}, selName=null, reasons=[];
+var calY, calM, calOpen=false;
+var naverMap=null, mapReady=false;
+
+// ─────────────────────────────────
+// 초기화
+// ─────────────────────────────────
+window.onload = function(){
+  clock();
+  var now=new Date(); calY=now.getFullYear(); calM=now.getMonth();
+  waitMapReady(function(){
+    mapReady=true;
+    initMap();
+    loadData();
+    loadReasons();
+  });
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('#cal-pop')&&!e.target.closest('#hd-cal')) closeCal();
+  });
+};
+
+function waitMapReady(cb){
+  // 동기 로드이므로 즉시 체크
+  if(window.kakao && window.kakao.maps){ cb(); return; }
+  // 혹시 늦게 로드될 경우 대비
+  var tries=0;
+  var t=setInterval(function(){
+    tries++;
+    if(window.kakao && window.kakao.maps){ clearInterval(t); cb(); return; }
+    if(tries > 30){ clearInterval(t); console.warn('카카오 지도 로드 타임아웃'); cb(); }
+  },200);
+}
+
+function p2(n){return String(n).padStart(2,'0');}
+
+function clock(){
+  var D=['일','월','화','수','목','금','토'];
+  function t(){
+    var n=new Date();
+    document.getElementById('hd-dt').textContent=n.getFullYear()+'.'+p2(n.getMonth()+1)+'.'+p2(n.getDate())+' ('+D[n.getDay()]+')';
+    document.getElementById('hd-ck').textContent=p2(n.getHours())+':'+p2(n.getMinutes())+':'+p2(n.getSeconds());
+  }
+  t(); setInterval(t,1000);
+}
+
+function initMap(){
+  if(!window.kakao || !window.kakao.maps){
+    console.warn('카카오 지도 미로드 - 지도 기능 비활성화');
+    document.getElementById('map').innerHTML=
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;background:#f1f5f9">'
+      +'<div style="font-size:32px">🗺️</div>'
+      +'<div style="font-size:13px;color:#64748B;font-weight:500">카카오 지도 로드 실패</div>'
+      +'<div style="font-size:11px;color:#94A3B8">카카오 개발자 콘솔에서 도메인을 확인해주세요</div>'
+      +'</div>';
+    mapReady=false;
+    return;
+  }
+  var container=document.getElementById('map');
+  var options={
+    center:new kakao.maps.LatLng(36.5,127.9),
+    level:8
+  };
+  naverMap=new kakao.maps.Map(container,options);
+  var zc=new kakao.maps.ZoomControl();
+  naverMap.addControl(zc,kakao.maps.ControlPosition.LEFT);
+  mapReady=true;
+}
+
+// ─────────────────────────────────
+// 날짜 정규화
+// ─────────────────────────────────
+function normDate(d){
+  if(!d) return '';
+  var s=String(d);
+  if(/^\d{1,2}\/\d{1,2}$/.test(s)) return s;
+  var m=s.match(/(\w+)\s+(\w+)\s+(\d+)\s+(\d{4})/);
+  if(m){
+    var M={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+    var mo=M[m[2]],day=parseInt(m[3]);
+    if(mo&&day) return mo+'/'+day;
+  }
+  var iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso) return parseInt(iso[2])+'/'+parseInt(iso[3]);
+  return s;
+}
+
+// ─────────────────────────────────
+// 데이터 로드
+// ─────────────────────────────────
+function loadData(){
+  setLoad(true,'시트 데이터 불러오는 중...');
+  fetch(GAS_URL + '?action=getData')
+    .then(function(r){return r.json();})
+    .then(function(json){
+      if(!json||json.error){setLoad(false);alert('오류: '+(json&&json.error||'알 수 없음'));return;}
+      json.dates=(json.dates||[]).map(normDate).filter(function(d){return d&&d.indexOf('/')>=0;});
+      json.latestDate=normDate(json.latestDate||'');
+      (json.factories||[]).forEach(function(f){
+        if(!f.history) return;
+        var nh={};
+        Object.keys(f.history).forEach(function(k){var nk=normDate(k);if(nk) nh[nk]=f.history[k];});
+        f.history=nh;
+      });
+      allData=json;
+      allDates=allData.dates||[];
+      curDate=allData.latestDate||allDates[allDates.length-1]||'';
+      setLoad(true,'좌표 캐시 확인 중...');
+      return fetch(GAS_URL + '?action=getGeoCache');
+    })
+    .then(function(r){return r ? r.json() : {};})
+    .then(function(cache){
+      var c=cache||{};
+      Object.keys(c).forEach(function(k){geoCache[k]=c[k];});
+      applyDate(curDate);
+    })
+    .catch(function(e){setLoad(false);alert('로드 실패: '+e.message);});
+}
+
+// ─────────────────────────────────
+// 날짜 적용
+// ─────────────────────────────────
+function applyDate(date){
+  curDate=date;
+  document.getElementById('hd-cur-date').textContent=date;
+  facs=(allData.factories||[]).map(function(f){
+    var h=(f.history&&f.history[date])||{woori:0,hyundai:0,total:0,banned:false,warned:false,needsReason:false,cumWoori:0,cumHyundai:0,cumTotal:0};
+    var st=h.banned?'ban':h.warned?'warn':h.total>0?'ok':'none';
+    return {seq:f.seq,name:f.name,name2:f.name2,addr:f.addr,
+            woori:h.woori||0,hyundai:h.hyundai||0,total:h.total||0,
+            cumWoori:h.cumWoori||0,cumHyundai:h.cumHyundai||0,cumTotal:h.cumTotal||0,
+            isBanned:h.banned,isWarned:h.warned,status:st,needsReason:h.needsReason||false};
+  });
+  updStats();
+  renderLists();
+  geocodeAll();
+  renderCal();
+  setLoad(false);
+}
+
+// ─────────────────────────────────
+// 통계
+// ─────────────────────────────────
+function cntByDate(date,type){
+  return (allData.factories||[]).filter(function(f){
+    var h=f.history&&f.history[date]; if(!h) return false;
+    return type==='ban'?h.banned:h.warned;
+  }).length;
+}
+
+function updStats(){
+  var bn=facs.filter(function(f){return f.isBanned;}).length;
+  var wn=facs.filter(function(f){return f.isWarned;}).length;
+  var ok=facs.filter(function(f){return f.status==='ok';}).length;
+  var tt=facs.reduce(function(s,f){return s+(f.total||0);},0);
+  var nr=facs.filter(function(f){return f.needsReason;}).length;
+  document.getElementById('ms-b').textContent=bn;
+  document.getElementById('ms-w').textContent=wn;
+  document.getElementById('ms-o').textContent=ok;
+  document.getElementById('ms-t').textContent=tt.toLocaleString();
+  document.getElementById('ban-cnt').textContent=bn;
+  document.getElementById('warn-cnt').textContent=wn;
+  document.getElementById('ban-date').textContent=curDate;
+  document.getElementById('warn-date').textContent=curDate;
+  var na=document.getElementById('nr-alert');
+  if(nr>0){na.textContent='⚠️ '+nr+'개 공장: 입고금지 중 접수 증가 → 사유 제출 필요';na.classList.add('show');}
+  else na.classList.remove('show');
+}
+
+// ─────────────────────────────────
+// 리스트 렌더
+// ─────────────────────────────────
+function esc(s){return JSON.stringify(s||'');}
+
+// data-fi(facs 인덱스) 기반 선택 - 따옴표 충돌 회피
+function selFacByEl(el){
+  var fi=parseInt(el.getAttribute('data-fi'));
+  if(isNaN(fi)||!facs[fi]) return;
+  var f=facs[fi];
+  showPop(f); hilite(f.name);
+  var pos=geoCache[f.addr];
+  if(pos&&naverMap){naverMap.setCenter(new kakao.maps.LatLng(pos.lat,pos.lng));naverMap.setLevel(3);}
+  setTimeout(function(){el.scrollIntoView({behavior:'smooth',block:'nearest'});},100);
+}
+
+function openModalByEl(el){
+  var fi=parseInt(el.getAttribute('data-fi'));
+  if(isNaN(fi)||!facs[fi]) return;
+  openModalFor(facs[fi].name);
+}
+function e2(s){return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+
+function renderLists(){
+  var bq=(document.getElementById('ban-inp').value||'').toLowerCase();
+  var wq=(document.getElementById('warn-inp').value||'').toLowerCase();
+  var banned=facs.filter(function(f){
+    return f.isBanned&&(!bq||f.name.toLowerCase().indexOf(bq)>=0||f.addr.toLowerCase().indexOf(bq)>=0);
+  });
+  var warned=facs.filter(function(f){
+    return f.isWarned&&(!wq||f.name.toLowerCase().indexOf(wq)>=0||f.addr.toLowerCase().indexOf(wq)>=0);
+  });
+  banned.sort(function(a,b){return (b.needsReason?1:0)-(a.needsReason?1:0)||b.total-a.total;});
+  warned.sort(function(a,b){return b.total-a.total;});
+  renderBan(banned);
+  renderWarn(warned);
+}
+
+function renderBan(list){
+  var w=document.getElementById('ban-list');
+  if(!list.length){
+    w.innerHTML='<div class="empty"><div class="empty-ic">✅</div><div class="empty-ms">입고금지 공장 없음</div><div class="empty-sb">'+curDate+'</div></div>';
+    return;
+  }
+  var html='';
+  list.forEach(function(f,idx){
+    var ac=selName===f.name;
+    // data-idx로 facs 배열 인덱스를 저장 → 따옴표 충돌 완전 회피
+    var fi=facs.indexOf(f);
+    html+='<div class="bc'+(ac?' on':'')+(f.needsReason?' nr':'')+'"';
+    html+=' data-n="'+e2(f.name)+'"';
+    html+=' data-fi="'+fi+'"';
+    html+=' onclick="selFacByEl(this)">';
+    html+='<div class="bc-top">';
+    html+='<div class="bc-row1">';
+    html+='<span class="bc-seq">'+(f.seq||'')+'</span>';
+    html+='<span class="bc-nm">'+e2(f.name)+'</span>';
+    if(f.needsReason) html+='<span class="bc-nr-badge">⚠️사유필요</span>';
+    html+='</div>';
+    html+='<div class="bc-ad">📍 '+e2(f.addr)+'</div>';
+    html+='</div>';
+    html+='<div class="bc-bt">';
+    html+='<span class="bcp w">+'+(f.woori||0)+'</span>';
+    html+='<span class="bcp h">+'+(f.hyundai||0)+'</span>';
+    html+='<span class="bcp t">당일+'+(f.total||0)+'대</span>';
+    html+='<span class="bc-rl" data-fi="'+fi+'" onclick="event.stopPropagation();openModalByEl(this)">사유제출→</span>';
+    html+='</div>';
+    html+='</div>';
+  });
+  w.innerHTML=html;
+}
+
+function renderWarn(list){
+  var w=document.getElementById('warn-list');
+  if(!list.length){
+    w.innerHTML='<div class="empty"><div class="empty-ic">👍</div><div class="empty-ms">입고제한 공장 없음</div><div class="empty-sb">'+curDate+'</div></div>';
+    return;
+  }
+  var html='';
+  list.forEach(function(f){
+    var fi=facs.indexOf(f);
+    var ac=selName===f.name;
+    html+='<div class="wc'+(ac?' on':'')+'" data-n="'+e2(f.name)+'" data-fi="'+fi+'" onclick="selFacByEl(this)">';
+    html+='<div class="wc-top">';
+    html+='<div class="wc-row1"><span class="wc-seq">'+(f.seq||'')+'</span><span class="wc-nm">'+e2(f.name)+'</span></div>';
+    html+='<div class="wc-ad">📍 '+e2(f.addr)+'</div></div>';
+    html+='<div class="wc-bt">';
+    html+='<span class="wcp w">+'+(f.woori||0)+'</span>';
+    html+='<span class="wcp h">+'+(f.hyundai||0)+'</span>';
+    html+='<span class="wcp t">당일+'+(f.total||0)+'대</span>';
+    html+='</div></div>';
+  });
+  w.innerHTML=html;
+}
+
+function scrollToNR(){
+  var el=document.querySelector('.bc.nr');
+  if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// ─────────────────────────────────
+// 지오코딩 (GAS 서버)
+// ─────────────────────────────────
+function geocodeAll(){
+  var toGeo=facs.filter(function(f){return f.addr&&!geoCache.hasOwnProperty(f.addr);});
+  if(!toGeo.length){plotMarkers();return;}
+  setLoad(true,'공장 위치 매핑 중...');
+  document.getElementById('ld-pg').textContent=toGeo.length+'개 주소 변환 중...';
+  var addrs=toGeo.map(function(f){return f.addr;});
+  fetch(GAS_URL+'?action=geocode&addrs='+encodeURIComponent(JSON.stringify(addrs)))
+    .then(function(r){return r.json();})
+    .then(function(result){
+      var r=result||{};
+      Object.keys(r).forEach(function(addr){
+        var v=r[addr];
+        geoCache[addr]=(v&&v.lat&&v.lng)?{lat:v.lat,lng:v.lng}:null;
+      });
+      plotMarkers();setLoad(false);
+    })
+    .catch(function(){
+      toGeo.forEach(function(f){geoCache[f.addr]=null;});
+      plotMarkers();setLoad(false);
+    });
+}
+
+// ─────────────────────────────────
+// 마커 (네이버)
+// ─────────────────────────────────
+function plotMarkers(){
+  if(!mapReady||!naverMap) return;
+  // 기존 마커 제거
+  Object.values(markers).forEach(function(m){m.setMap(null);}); markers={};
+
+  facs.forEach(function(f){
+    var pos=geoCache[f.addr]; if(!pos) return;
+    var cfg={
+      ban: {c:'#C8281E',sz:18,pulse:true},
+      warn:{c:'#FAAD14',sz:14,pulse:false},
+      ok:  {c:'#52C41A',sz:10,pulse:false},
+      none:{c:'#CBD5E1',sz:7, pulse:false}
+    }[f.status]||{c:'#CBD5E1',sz:7,pulse:false};
+
+    var dot='<div style="'
+      +'width:'+(cfg.sz*2)+'px;height:'+(cfg.sz*2)+'px;'
+      +'background:'+cfg.c+';border-radius:50%;'
+      +'border:2.5px solid rgba(255,255,255,.9);'
+      +'box-shadow:0 2px 8px rgba(0,0,0,.3);'
+      +'cursor:pointer;display:flex;align-items:center;justify-content:center;'
+      +(cfg.pulse?'animation:mpulse 2s infinite;':'')
+      +'">'
+      +(f.status==='ban'?'<span style="color:#fff;font-size:10px;font-weight:800;line-height:1">!</span>':'')
+      +'</div>';
+
+    var pos_obj=new kakao.maps.LatLng(pos.lat,pos.lng);
+    var mk=new kakao.maps.CustomOverlay({
+      position:pos_obj,
+      content:dot,
+      map:naverMap,
+      zIndex:f.status==='ban'?3:f.status==='warn'?2:1
+    });
+
+    // 클릭 이벤트 (CustomOverlay는 content DOM에 직접 등록)
+    (function(factory,overlay){
+      var el=document.createElement('div');
+      el.innerHTML=dot;
+      var d=el.firstChild;
+      d.addEventListener('click',function(){
+        showPop(factory);
+        hilite(factory.name);
+      });
+      overlay.setContent(d);
+    })(f,mk);
+
+    markers[f.name]=mk;
+  });
+}
+
+// ─────────────────────────────────
+// 팝업
+// ─────────────────────────────────
+function showPop(f){
+  selName=f.name;
+  document.getElementById('pop-nm').textContent=f.name||'';
+  var bd=document.getElementById('pop-bd');
+  var lb={ban:'🔴 입고금지',warn:'🟡 입고제한',ok:'🟢 원활',none:'⚪ 실적없음'};
+  bd.textContent=lb[f.status]||'';
+  bd.className='pb '+(f.status==='ban'?'ban':f.status==='warn'?'warn':'ok');
+  document.getElementById('pop-ad').textContent=f.addr||'';
+  document.getElementById('pop-w').textContent=f.woori||0;
+  document.getElementById('pop-h').textContent=f.hyundai||0;
+  document.getElementById('pop-t').textContent=f.total||0;
+  document.getElementById('pop-cw').textContent=f.cumWoori||0;
+  document.getElementById('pop-ch').textContent=f.cumHyundai||0;
+  document.getElementById('pop-ct').textContent=f.cumTotal||0;
+  document.getElementById('pop-rb').style.display=(f.isBanned||f.isWarned)?'':'none';
+  var pop=document.getElementById('pop');
+  pop.className='show '+(f.isBanned?'ban-p':f.isWarned?'warn-p':'ok-p');
+}
+function closePop(){document.getElementById('pop').className='';selName=null;}
+
+function hilite(name){
+  selName=name;
+  var els=document.querySelectorAll('.bc,.wc');
+  for(var i=0;i<els.length;i++) els[i].classList.toggle('on',els[i].dataset.n===name);
+  Object.keys(markers).forEach(function(n){
+    var mk=markers[n];
+    var f=facs.find(function(x){return x.name===n;});
+    if(!f) return;
+    var cfg={ban:{c:'#C8281E',sz:18},warn:{c:'#FAAD14',sz:14},ok:{c:'#52C41A',sz:10},none:{c:'#CBD5E1',sz:7}}[f.status]||{c:'#CBD5E1',sz:7};
+    var isOn=(n===name);
+    var dot='<div style="'
+      +'width:'+(isOn?(cfg.sz+4)*2:cfg.sz*2)+'px;height:'+(isOn?(cfg.sz+4)*2:cfg.sz*2)+'px;'
+      +'background:'+cfg.c+';border-radius:50%;'
+      +'border:'+(isOn?'3px solid #1A1A2E':'2.5px solid rgba(255,255,255,.9)')+';'
+      +'box-shadow:0 2px 8px rgba(0,0,0,.3);'
+      +'cursor:pointer;display:flex;align-items:center;justify-content:center;">'
+      +(f.status==='ban'?'<span style="color:#fff;font-size:10px;font-weight:800;line-height:1">!</span>':'')
+      +'</div>';
+    var sz=isOn?cfg.sz+4:cfg.sz;
+    // 카카오는 setContent로 처리 (아래 코드에서 처리됨)
+  });
+}
+
+function selFac(name){
+  var f=facs.find(function(x){return x.name===name;}); if(!f) return;
+  showPop(f); hilite(name);
+  var pos=geoCache[f.addr];
+  if(pos&&naverMap){naverMap.setCenter(new kakao.maps.LatLng(pos.lat,pos.lng));naverMap.setLevel(3);}
+  setTimeout(function(){
+    var el=document.querySelector('[data-n="'+e2(name)+'"]');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  },100);
+}
+
+// ─────────────────────────────────
+// 달력
+// ─────────────────────────────────
+function toggleCal(){calOpen=!calOpen;document.getElementById('cal-pop').classList.toggle('open',calOpen);if(calOpen)renderCal();}
+function closeCal(){calOpen=false;document.getElementById('cal-pop').classList.remove('open');}
+function calMove(d){calM+=d;if(calM>11){calM=0;calY++;}if(calM<0){calM=11;calY--;}renderCal();}
+
+function renderCal(){
+  var ML=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  document.getElementById('cal-ml').textContent=calY+'년 '+ML[calM];
+  var dm={};
+  (allDates||[]).forEach(function(d){
+    var pts=d.split('/'); if(pts.length!==2) return;
+    var m=parseInt(pts[0])-1, day=parseInt(pts[1]);
+    if(!dm[m]) dm[m]={};
+    dm[m][day]={date:d,ban:cntByDate(d,'ban'),warn:cntByDate(d,'warn')};
+  });
+  var grid=document.getElementById('cal-grid');
+  var dows=['일','월','화','수','목','금','토'];
+  var html=dows.map(function(d){return '<div class="cdow">'+d+'</div>';}).join('');
+  var first=new Date(calY,calM,1).getDay();
+  var days=new Date(calY,calM+1,0).getDate();
+  var today=new Date();
+  for(var i=0;i<first;i++) html+='<div class="cday empty"></div>';
+  for(var d=1;d<=days;d++){
+    var info=dm[calM]&&dm[calM][d];
+    var cls='cday';
+    if(info){
+      if(info.ban>0) cls+=' has-ban';
+      else if(info.warn>0) cls+=' has-warn';
+      else cls+=' has-data';
+    }
+    if(info&&info.date===curDate) cls+=' sel';
+    if(calY===today.getFullYear()&&calM===today.getMonth()&&d===today.getDate()) cls+=' today';
+    var oc=info?(' onclick="applyDate(\''+info.date+'\');closeCal()"'):'';
+    html+='<div class="'+cls+'"'+oc+'>'+d+'</div>';
+  }
+  grid.innerHTML=html;
+}
+
+// ─────────────────────────────────
+// 사유 모달
+// ─────────────────────────────────
+function openModal(){if(selName) openModalFor(selName);}
+function openModalFor(name){
+  var f=facs.find(function(x){return x.name===name;}); if(!f) return;
+  document.getElementById('mo-info').textContent='📍 '+f.name+'  |  '+curDate+'  |  당일 +'+(f.total||0)+'대 접수';
+  document.getElementById('mo-sub').value='';
+  document.getElementById('mo-rs').value='';
+  document.getElementById('mo-ov').classList.add('show');
+  selName=name;
+}
+function closeMo(){document.getElementById('mo-ov').classList.remove('show');}
+
+function submitReason(){
+  var name=selName;
+  var rs=document.getElementById('mo-rs').value;
+  var sb=document.getElementById('mo-sub').value;
+  if(!rs||!rs.trim()){alert('사유를 입력해 주세요.');return;}
+  rs=rs.trim(); sb=(sb||'').trim()||'미입력';
+  var btn=document.getElementById('mo-submit-btn');
+  btn.textContent='제출 중...'; btn.disabled=true;
+
+  // 현재 공장 입고수 정보
+  var f=facs.find(function(x){return x.name===name;})||{};
+  var woori=f.woori||0, hyundai=f.hyundai||0, total=f.total||0;
+
+  var params=new URLSearchParams({
+    action:'saveReason',
+    date:curDate, factoryName:name, addr:f.addr||'',
+    woori:woori, hyundai:hyundai, total:total,
+    reason:rs, submitter:sb
+  });
+  fetch(GAS_URL+'?'+params.toString())
+    .then(function(r){return r.json();})
+    .then(function(){
+      btn.textContent='제출'; btn.disabled=false;
+      closeMo(); loadReasons();
+      alert('제출되었습니다. 스프레드시트에 저장되었습니다.');
+    })
+    .catch(function(e){
+      alert('제출 실패: '+e.message);
+      btn.textContent='제출'; btn.disabled=false;
+    });
+}
+
+function loadReasons(){
+  fetch(GAS_URL+'?action=getReasons')
+    .then(function(r){return r.json();})
+    .then(function(data){reasons=data||[];renderReasons();})
+    .catch(function(){});
+}
+
+function renderReasons(){
+  document.getElementById('rbadge').textContent=reasons.length;
+  var wrap=document.getElementById('rl');
+  if(!reasons.length){wrap.innerHTML='<div style="padding:10px 16px;font-size:11px;color:#94A3B8">접수 내역 없음</div>';return;}
+  var html='';
+  var rev=reasons.slice().reverse();
+  rev.forEach(function(r){
+    html+='<div class="ri">';
+    html+='<div class="ri-tp"><span class="ri-fn">'+(r.factoryName||'')+'</span><span class="ri-dt">'+(r.date||'')+'</span></div>';
+    html+='<div class="ri-rs">'+(r.reason||'')+'</div>';
+    html+='<div class="ri-mt">'+(r.submitter||'')+' · '+(r.savedAt||'')+'</div>';
+    html+='</div>';
+  });
+  wrap.innerHTML=html;
+}
+function toggleRL(){document.getElementById('rl').classList.toggle('open');}
+
+// ─────────────────────────────────
+// 로딩
+// ─────────────────────────────────
+function setLoad(on,msg){
+  document.getElementById('ld').classList.toggle('hidden',!on);
+  if(msg) document.getElementById('ld-ms').textContent=msg;
+  var ic=document.getElementById('ref-ic');
+  if(on) ic.classList.add('spin'); else ic.classList.remove('spin');
+}
+</script>
+<style>
+@keyframes mpulse{
+  0%,100%{box-shadow:0 2px 8px rgba(200,40,30,.5)}
+  50%{box-shadow:0 0 0 10px rgba(200,40,30,0),0 2px 8px rgba(200,40,30,.5)}
+}
+</style>
+</body>
+</html>
